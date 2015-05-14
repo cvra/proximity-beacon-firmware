@@ -35,6 +35,9 @@
 #include <cvra/motor/control/Trajectory.hpp>
 #include <cvra/motor/control/Torque.hpp>
 #include <cvra/motor/control/Voltage.hpp>
+#include <cvra/proximity_beacon/Signal.hpp>
+#include <cvra/proximity_beacon/Settings.hpp>
+#include "proximity_beacon.h"
 
 #define CAN_BITRATE             1000000
 #define UAVCAN_SPIN_FREQUENCY   100
@@ -286,7 +289,13 @@ static THD_FUNCTION(uavcan_node, arg)
         uavcan_failure("cvra::motor::feedback::MotorTorque publisher");
     }
 
-
+    /** Proximity beacon signal */
+    proximity_beacon_init();
+    uavcan::Publisher<cvra::proximity_beacon::Signal> prox_beac_pub(node);
+    const int prox_beac_pub_init_res = prox_beac_pub.init();
+    if (prox_beac_pub_init_res < 0) {
+        uavcan_failure("cvra::proximity_beacon::Signal publisher");
+    }
 
     /* Servers */
     /** initial config */
@@ -432,6 +441,20 @@ static THD_FUNCTION(uavcan_node, arg)
         uavcan_failure("cvra::motor::config::EnableMotor server");
     }
 
+    /** Proximity beacon settings server */
+    uavcan::ServiceServer<cvra::proximity_beacon::Settings> prox_beac_srv(node);
+    const int prox_beac_srv_res = prox_beac_srv.start(
+        [&](const uavcan::ReceivedDataStructure<cvra::proximity_beacon::Settings::Request>& req,
+            cvra::proximity_beacon::Settings::Response& rsp)
+        {
+            proximity_beacon_set_speed(req.speed);
+            rsp.dummy = 1;
+        });
+
+    if (prox_beac_srv_res < 0) {
+        uavcan_failure("cvra::proximity_beacon::Settings server");
+    }
+
     while (true) {
         int res = node.spin(uavcan::MonotonicDuration::fromMSec(1000/UAVCAN_SPIN_FREQUENCY));
 
@@ -495,6 +518,14 @@ static THD_FUNCTION(uavcan_node, arg)
         }
 
 
+        struct proximity_beacon_signal *pbs;
+        while ((pbs = proximity_beacon_signal_get()) != NULL) {
+            cvra::proximity_beacon::Signal sig;
+            sig.start_angle = pbs->start_angle;
+            sig.length = pbs->length;
+            prox_beac_pub.broadcast(sig);
+            proximity_beacon_signal_delete(pbs);
+        }
     }
     return 0;
 }
