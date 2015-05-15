@@ -455,6 +455,7 @@ static THD_FUNCTION(uavcan_node, arg)
         uavcan_failure("cvra::proximity_beacon::Settings server");
     }
 
+    bool proximity_beacon_running = false;
     while (true) {
         int res = node.spin(uavcan::MonotonicDuration::fromMSec(1000/UAVCAN_SPIN_FREQUENCY));
 
@@ -518,13 +519,18 @@ static THD_FUNCTION(uavcan_node, arg)
         }
 
 
-        struct proximity_beacon_signal *pbs;
-        while ((pbs = proximity_beacon_signal_get()) != NULL) {
-            cvra::proximity_beacon::Signal sig;
-            sig.start_angle = pbs->start_angle;
-            sig.length = pbs->length;
-            prox_beac_pub.broadcast(sig);
-            proximity_beacon_signal_delete(pbs);
+        if (proximity_beacon_running) {
+            struct proximity_beacon_signal *pbs;
+            while ((pbs = proximity_beacon_signal_get()) != NULL) {
+                cvra::proximity_beacon::Signal sig;
+                sig.start_angle = pbs->start_angle;
+                sig.length = pbs->length;
+                prox_beac_pub.broadcast(sig);
+                proximity_beacon_signal_delete(pbs);
+            }
+        } else if (node.getNodeStatusProvider().getStatusCode() == uavcan::protocol::NodeStatus::STATUS_OK) {
+            proximity_beacon_set_speed(2*M_PI*10); // 10 Hz default
+            proximity_beacon_running = true;
         }
     }
     return 0;
