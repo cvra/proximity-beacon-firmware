@@ -1,16 +1,15 @@
 #include <ch.h>
 #include <hal.h>
 #include <stdbool.h>
+#include <math.h>
 #include "timestamp/timestamp.h"
 #include "rpm.h"
+#include "control.h"
 #include "proximity_beacon.h"
 
 // max 7 signals per tour
-#define SIGNAL_BUFFER_SIZE 2*7
-
-// rotational velocity of sensor mirror, [rad/s]
-#define DEFAULT_SPEED   10*2*M_PI;
-#define SPEED_MAX       100*2*M_PI;
+#define SIGNAL_BUFFER_SIZE  2*7
+#define MAX_SPEED           50*2*M_PI
 
 struct proximity_beacon_signal proximity_beacon_array[SIGNAL_BUFFER_SIZE];
 msg_t proximity_beacon_buffer[SIGNAL_BUFFER_SIZE];
@@ -103,5 +102,8 @@ void proximity_beacon_signal_delete(struct proximity_beacon_signal *sp)
 
 void proximity_beacon_set_speed(float omega)
 {
-    (void) omega;
+    if (omega > MAX_SPEED) {
+        omega = MAX_SPEED;
+    }
+    control_update_velocity_setpoint(omega);
 }
