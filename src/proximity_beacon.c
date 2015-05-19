@@ -24,7 +24,7 @@ static const EXTConfig extcfg = {{
     {EXT_CH_MODE_DISABLED, NULL}, // 2
     {EXT_CH_MODE_DISABLED, NULL}, // 3
     // hal sensor, PB4
-    {EXT_CH_MODE_RISING_EDGE | EXT_CH_MODE_AUTOSTART | EXT_MODE_GPIOB, gpio_exti_callback},
+    {EXT_CH_MODE_FALLING_EDGE | EXT_CH_MODE_AUTOSTART | EXT_MODE_GPIOB, gpio_exti_callback},
     {EXT_CH_MODE_DISABLED, NULL}, // 5
     {EXT_CH_MODE_DISABLED, NULL}, // 6
     {EXT_CH_MODE_DISABLED, NULL}, // 7
