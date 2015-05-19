@@ -2,8 +2,8 @@
 #include <hal.h>
 #include <stdbool.h>
 #include <math.h>
-#include "timestamp/timestamp.h"
-#include "rpm.h"
+#include <timestamp/timestamp.h>
+#include <timestamp/timestamp_stm32.h>
 #include "control.h"
 #include "proximity_beacon.h"
 
@@ -49,31 +49,51 @@ static const EXTConfig extcfg = {{
 static void gpio_exti_callback(EXTDriver *extp, expchannel_t channel)
 {
     (void)extp;
-    static float start_angle;
-    static bool signal_active;
+    static float start_angle = 0;
+    static bool signal_active = false;
+    static timestamp_t last_last_crossing = 0;
+    static timestamp_t last_crossing = 1;
+
+    timestamp_t timestamp = timestamp_get();
     if (channel == GPIOA_GPIO_I) {
-        if (!palReadPad(GPIOA, GPIOA_GPIO_I)) {
-            // light signal received
-            start_angle = rpm_get_position();
-            signal_active = true;
+        int pin = palReadPad(GPIOA, GPIOA_GPIO_I);
+
+        // calculate position
+        float delta_t = timestamp_duration_s(last_crossing, timestamp);
+        float period = timestamp_duration_s(last_last_crossing, last_crossing);
+        float position;
+        if (delta_t < period) {
+            position =  delta_t / period * 2 * M_PI;
         } else {
+            // can't handle non-constant speed -> set to 0 'till next barrier crossing
+            position = 0;
+        }
+
+        if (!pin) {
+            // light signal received
+            start_angle = position;
+            signal_active = true;
+        } else if (signal_active) {
             // light signal lost
-            if (signal_active) {
-                float length = rpm_get_position() - start_angle;
-                signal_active = false;
-                chSysLockFromISR();
-                struct proximity_beacon_signal *sp;
-                sp = chPoolAllocI(&proximity_beacon_pool);
-                if (sp) {
-                    sp->start_angle = start_angle;
-                    sp->length = length;
-                    chMBPostI(&proximity_beacon_mbox, (msg_t)sp);
-                }
-                chSysUnlockFromISR();
+            float length = position - start_angle;
+            if (length < 0) {
+                length += 2*M_PI;
             }
+            signal_active = false;
+
+            chSysLockFromISR();
+            struct proximity_beacon_signal *sp;
+            sp = chPoolAllocI(&proximity_beacon_pool);
+            if (sp) {
+                sp->start_angle = start_angle;
+                sp->length = length;
+                chMBPostI(&proximity_beacon_mbox, (msg_t)sp);
+            }
+            chSysUnlockFromISR();
         }
     } else if (channel == GPIOB_GPIO_A) { // hal sensor
-        rpm_barrier_crossing(timestamp_get());
+        last_last_crossing = last_crossing;
+        last_crossing = timestamp;
     }
 }
 
