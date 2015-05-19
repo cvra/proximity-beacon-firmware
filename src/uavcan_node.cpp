@@ -441,14 +441,12 @@ static THD_FUNCTION(uavcan_node, arg)
         uavcan_failure("cvra::motor::config::EnableMotor server");
     }
 
-    /** Proximity beacon settings server */
-    uavcan::ServiceServer<cvra::proximity_beacon::Settings> prox_beac_srv(node);
+    /** Proximity beacon settings */
+    uavcan::Subscriber<cvra::proximity_beacon::Settings> prox_beac_srv(node);
     const int prox_beac_srv_res = prox_beac_srv.start(
-        [&](const uavcan::ReceivedDataStructure<cvra::proximity_beacon::Settings::Request>& req,
-            cvra::proximity_beacon::Settings::Response& rsp)
+        [&](const uavcan::ReceivedDataStructure<cvra::proximity_beacon::Settings>& req)
         {
             proximity_beacon_set_speed(req.speed);
-            rsp.dummy = 1;
         });
 
     if (prox_beac_srv_res < 0) {
