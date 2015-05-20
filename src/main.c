@@ -16,6 +16,8 @@
 #include "bootloader_config.h"
 #include "uavcan_node.h"
 #include "timestamp/timestamp_stm32.h"
+#include "index.h"
+#include <can-bootloader/boot_arg.h>
 
 BaseSequentialStream* ch_stdout;
 parameter_namespace_t parameter_root_ns;
@@ -98,13 +100,8 @@ void panic_hook(const char* reason)
     static BlockingUARTDriver blocking_uart_stream;
     blocking_uart_init(&blocking_uart_stream, USART3, 115200);
     BaseSequentialStream* uart = (BaseSequentialStream*)&blocking_uart_stream;
-    int i;
-    while(42){
-        for(i = 10000000; i>0; i--){
-            __asm__ volatile ("nop");
-        }
-        chprintf(uart, "Panic: %s\n", reason);
-    }
+    chprintf(uart, "Panic: %s\n", reason);
+    reboot(BOOT_ARG_START_BOOTLOADER_NO_TIMEOUT);
 }
 
 void __assert_func(const char *_file, int _line, const char *_func, const char *_expr )
