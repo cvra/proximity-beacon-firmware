@@ -14,15 +14,15 @@
 #include <uavcan_stm32/uavcan_stm32.hpp>
 #include <uavcan/protocol/NodeStatus.hpp>
 #include "stream.h"
-
+#include <cvra/motor/config/EnableMotor.hpp>
 #include <cvra/motor/config/LoadConfiguration.hpp>
 #include <cvra/motor/config/CurrentPID.hpp>
 #include <cvra/motor/config/VelocityPID.hpp>
 #include <cvra/motor/config/PositionPID.hpp>
 #include <cvra/motor/config/TorqueLimit.hpp>
-#include <cvra/motor/config/EnableMotor.hpp>
 #include <cvra/motor/config/FeedbackStream.hpp>
 #include <cvra/StringID.hpp>
+#include <cvra/motor/EmergencyStop.hpp>
 #include <cvra/motor/feedback/CurrentPID.hpp>
 #include <cvra/motor/feedback/VelocityPID.hpp>
 #include <cvra/motor/feedback/PositionPID.hpp>
@@ -49,7 +49,6 @@ typedef uavcan::Node<4096> Node;
 uavcan::LazyConstructor<Node> node_;
 
 
-
 stream_config_t string_id_stream_config     = {false, 0, 0};
 stream_config_t current_pid_stream_config   = {false, 0, 0};
 stream_config_t velocity_pid_stream_config  = {false, 0, 0};
@@ -61,7 +60,7 @@ stream_config_t motor_torque_stream_config  = {false, 0, 0};
 
 
 static void stream_init_from_callback(stream_config_t *stream_config,
-                                      const uavcan::ReceivedDataStructure<cvra::motor::config::FeedbackStream>& msg)
+                                      const uavcan::ReceivedDataStructure<cvra::motor::config::FeedbackStream::Request>& msg)
 {
     if (msg.enabled != 0) {
         stream_set_prescaler(stream_config, msg.frequency, UAVCAN_SPIN_FREQUENCY);
@@ -93,7 +92,7 @@ static THD_FUNCTION(uavcan_node, arg)
 
     chRegSetThreadName("uavcan node");
 
-    if (can.init(CAN_BITRATE) != 0) {
+    if (can.init((uavcan::uint32_t)CAN_BITRATE) != 0) {
         uavcan_failure("CAN driver");
     }
 
@@ -131,16 +130,30 @@ static THD_FUNCTION(uavcan_node, arg)
         uavcan_failure("cvra::Reboot subscriber");
     }
 
+    uavcan::Subscriber<cvra::motor::EmergencyStop> emergency_stop_sub(node);
+    ret = emergency_stop_sub.start(
+        [&](const uavcan::ReceivedDataStructure<cvra::motor::EmergencyStop>& msg)
+        {
+            (void)msg;
+            reboot(BOOT_ARG_START_BOOTLOADER_NO_TIMEOUT);
+        }
+    );
+    if (ret != 0) {
+        uavcan_failure("cvra::motor::EmergencyStop subscriber");
+    }
+
     uavcan::Subscriber<cvra::motor::control::Trajectory> traj_ctrl_sub(node);
     ret = traj_ctrl_sub.start(
         [&](const uavcan::ReceivedDataStructure<cvra::motor::control::Trajectory>& msg)
         {
-            timestamp_t timestamp = timestamp_get();
-            control_update_trajectory_setpoint(msg.position,
-                                               msg.velocity,
-                                               msg.acceleration,
-                                               msg.torque,
+            if (uavcan::NodeID(msg.node_id) == node.getNodeID()) {
+                timestamp_t timestamp = timestamp_get();
+                control_update_trajectory_setpoint(msg.position,
+                                                   msg.velocity,
+                                                   msg.acceleration,
+                                                   msg.torque,
                                                timestamp);
+            }
         }
     );
     if (ret != 0) {
@@ -151,7 +164,9 @@ static THD_FUNCTION(uavcan_node, arg)
     ret = vel_ctrl_sub.start(
         [&](const uavcan::ReceivedDataStructure<cvra::motor::control::Velocity>& msg)
         {
-            control_update_velocity_setpoint(msg.velocity);
+            if (uavcan::NodeID(msg.node_id) == node.getNodeID()) {
+                control_update_velocity_setpoint(msg.velocity);
+            }
         }
     );
     if (ret != 0) {
@@ -162,7 +177,9 @@ static THD_FUNCTION(uavcan_node, arg)
     ret = pos_ctrl_sub.start(
         [&](const uavcan::ReceivedDataStructure<cvra::motor::control::Position>& msg)
         {
-            control_update_position_setpoint(msg.position);
+            if (uavcan::NodeID(msg.node_id) == node.getNodeID()) {
+                control_update_position_setpoint(msg.position);
+            }
         }
     );
     if (ret != 0) {
@@ -173,7 +190,9 @@ static THD_FUNCTION(uavcan_node, arg)
     ret = torque_ctrl_sub.start(
         [&](const uavcan::ReceivedDataStructure<cvra::motor::control::Torque>& msg)
         {
-            control_update_torque_setpoint(msg.torque);
+            if (uavcan::NodeID(msg.node_id) == node.getNodeID()) {
+                control_update_torque_setpoint(msg.torque);
+            }
         }
     );
     if (ret != 0) {
@@ -184,52 +203,13 @@ static THD_FUNCTION(uavcan_node, arg)
     ret = voltage_ctrl_sub.start(
         [&](const uavcan::ReceivedDataStructure<cvra::motor::control::Voltage>& msg)
         {
-            (void)msg;
-            chSysHalt("voltage control not implemented yet");
-        }
-    );
-    if (ret != 0) {
-        uavcan_failure("cvra::motor::control::Voltage subscriber");
-    }
-
-    uavcan::Subscriber<cvra::motor::config::FeedbackStream> feedback_stream_sub(node);
-    ret = feedback_stream_sub.start(
-        [&](const uavcan::ReceivedDataStructure<cvra::motor::config::FeedbackStream>& msg)
-        {
-            switch (msg.stream) {
-                case cvra::motor::config::FeedbackStream::STREAM_CURRENT_PID : {
-                    stream_init_from_callback(&current_pid_stream_config, msg);
-                    break;
-                }
-                case cvra::motor::config::FeedbackStream::STREAM_VELOCITY_PID : {
-                    stream_init_from_callback(&velocity_pid_stream_config, msg);
-                    break;
-                }
-                case cvra::motor::config::FeedbackStream::STREAM_POSITION_PID : {
-                    stream_init_from_callback(&position_pid_stream_config, msg);
-                    break;
-                }
-                case cvra::motor::config::FeedbackStream::STREAM_INDEX : {
-                    stream_init_from_callback(&index_stream_config, msg);
-                    break;
-                }
-                case cvra::motor::config::FeedbackStream::STREAM_MOTOR_ENCODER : {
-                    stream_init_from_callback(&motor_enc_stream_config, msg);
-                    break;
-                }
-                case cvra::motor::config::FeedbackStream::STREAM_MOTOR_POSITION : {
-                    stream_init_from_callback(&motor_pos_stream_config, msg);
-                    break;
-                }
-                case cvra::motor::config::FeedbackStream::STREAM_MOTOR_TORQUE : {
-                    stream_init_from_callback(&motor_torque_stream_config, msg);
-                    break;
-                }
+            if (uavcan::NodeID(msg.node_id) == node.getNodeID()) {
+                control_update_voltage_setpoint(msg.voltage);
             }
         }
     );
     if (ret != 0) {
-        uavcan_failure("cvra::motor::config::FeedbackStream subscriber");
+        uavcan_failure("cvra::motor::control::Voltage subscriber");
     }
 
     /* Publishers */
@@ -299,10 +279,13 @@ static THD_FUNCTION(uavcan_node, arg)
 
     /* Servers */
     /** initial config */
-    uavcan::Subscriber<cvra::motor::config::LoadConfiguration> load_config_srv(node);
+    uavcan::ServiceServer<cvra::motor::config::LoadConfiguration> load_config_srv(node);
     const int load_config_srv_res = load_config_srv.start(
-        [&](const uavcan::ReceivedDataStructure<cvra::motor::config::LoadConfiguration>& req)
+        [&](const uavcan::ReceivedDataStructure<cvra::motor::config::LoadConfiguration::Request>& req,
+                                                cvra::motor::config::LoadConfiguration::Response& rsp)
         {
+            (void) rsp;
+
             control_stop();
 
             parameter_scalar_set(parameter_find(&parameter_root_ns, "control/acceleration_limit"), req.acceleration_limit);
@@ -331,19 +314,19 @@ static THD_FUNCTION(uavcan_node, arg)
             parameter_scalar_set(parameter_find(&parameter_root_ns, "thermal/Cth"), req.thermal_capacity);
 
 
-            if (req.mode == cvra::motor::config::LoadConfiguration::MODE_INDEX) {
+            if (req.mode == cvra::motor::config::LoadConfiguration::Request::MODE_INDEX) {
                 control_feedback.input_selection = FEEDBACK_RPM;
             }
-            if (req.mode == cvra::motor::config::LoadConfiguration::MODE_ENC_PERIODIC) {
+            if (req.mode == cvra::motor::config::LoadConfiguration::Request::MODE_ENC_PERIODIC) {
                 control_feedback.input_selection = FEEDBACK_PRIMARY_ENCODER_PERIODIC;
             }
-            if (req.mode == cvra::motor::config::LoadConfiguration::MODE_ENC_BOUNDED) {
+            if (req.mode == cvra::motor::config::LoadConfiguration::Request::MODE_ENC_BOUNDED) {
                 control_feedback.input_selection = FEEDBACK_PRIMARY_ENCODER_BOUNDED;
             }
-            if (req.mode == cvra::motor::config::LoadConfiguration::MODE_2_ENC_PERIODIC) {
+            if (req.mode == cvra::motor::config::LoadConfiguration::Request::MODE_2_ENC_PERIODIC) {
                 control_feedback.input_selection = FEEDBACK_TWO_ENCODERS_PERIODIC;
             }
-            if (req.mode == cvra::motor::config::LoadConfiguration::MODE_MOTOR_POT) {
+            if (req.mode == cvra::motor::config::LoadConfiguration::Request::MODE_MOTOR_POT) {
                 control_feedback.input_selection = FEEDBACK_POTENTIOMETER;
             }
 
@@ -365,18 +348,67 @@ static THD_FUNCTION(uavcan_node, arg)
 
             chprintf(ch_stdout, "LoadConfiguration received\n");
 
-            node.setStatusOk();
+            // Mark the node as correctly initialized
+            node.getNodeStatusProvider().setModeOperational();
+            node.getNodeStatusProvider().setHealthOk();
         });
 
     if (load_config_srv_res < 0) {
         uavcan_failure("cvra::motor::config::LoadConfiguration server");
     }
 
-    /** Current PID config */
-    uavcan::Subscriber<cvra::motor::config::CurrentPID> current_pid_srv(node);
-    const int current_pid_srv_res = current_pid_srv.start(
-        [&](const uavcan::ReceivedDataStructure<cvra::motor::config::CurrentPID>& req)
+    /** Feedback Stream config*/
+    uavcan::ServiceServer<cvra::motor::config::FeedbackStream> feedback_stream_sub(node);
+    const int feedback_stream_srv_res = feedback_stream_sub.start(
+        [&](const uavcan::ReceivedDataStructure<cvra::motor::config::FeedbackStream::Request>& req,
+                                                cvra::motor::config::FeedbackStream::Response& rsp)
         {
+
+            (void) rsp;
+
+            switch (req.stream) {
+                case cvra::motor::config::FeedbackStream::Request::STREAM_CURRENT_PID : {
+                    stream_init_from_callback(&current_pid_stream_config, req);
+                    break;
+                }
+                case cvra::motor::config::FeedbackStream::Request::STREAM_VELOCITY_PID : {
+                    stream_init_from_callback(&velocity_pid_stream_config, req);
+                    break;
+                }
+                case cvra::motor::config::FeedbackStream::Request::STREAM_POSITION_PID : {
+                    stream_init_from_callback(&position_pid_stream_config, req);
+                    break;
+                }
+                case cvra::motor::config::FeedbackStream::Request::STREAM_INDEX : {
+                    stream_init_from_callback(&index_stream_config, req);
+                    break;
+                }
+                case cvra::motor::config::FeedbackStream::Request::STREAM_MOTOR_ENCODER : {
+                    stream_init_from_callback(&motor_enc_stream_config, req);
+                    break;
+                }
+                case cvra::motor::config::FeedbackStream::Request::STREAM_MOTOR_POSITION : {
+                    stream_init_from_callback(&motor_pos_stream_config, req);
+                    break;
+                }
+                case cvra::motor::config::FeedbackStream::Request::STREAM_MOTOR_TORQUE : {
+                    stream_init_from_callback(&motor_torque_stream_config, req);
+                    break;
+                }
+            }
+        }
+    );
+    if (feedback_stream_srv_res < 0) {
+        uavcan_failure("cvra::motor::config::FeedbackStream server");
+    }
+
+    /** Current PID config */
+    uavcan::ServiceServer<cvra::motor::config::CurrentPID> current_pid_srv(node);
+    const int current_pid_srv_res = current_pid_srv.start(
+        [&](const uavcan::ReceivedDataStructure<cvra::motor::config::CurrentPID::Request>& req,
+                                                cvra::motor::config::CurrentPID::Response& rsp)
+        {
+            (void) rsp; /* empty response */
             parameter_scalar_set(parameter_find(&parameter_root_ns, "/control/current/kp"), req.pid.kp);
             parameter_scalar_set(parameter_find(&parameter_root_ns, "/control/current/ki"), req.pid.ki);
             parameter_scalar_set(parameter_find(&parameter_root_ns, "/control/current/kd"), req.pid.kd);
@@ -388,10 +420,13 @@ static THD_FUNCTION(uavcan_node, arg)
     }
 
     /** Velocity PID config */
-    uavcan::Subscriber<cvra::motor::config::VelocityPID> velocity_pid_srv(node);
+    uavcan::ServiceServer<cvra::motor::config::VelocityPID> velocity_pid_srv(node);
     const int velocity_pid_srv_res = velocity_pid_srv.start(
-        [&](const uavcan::ReceivedDataStructure<cvra::motor::config::VelocityPID>& req)
+        [&](const uavcan::ReceivedDataStructure<cvra::motor::config::VelocityPID::Request>& req,
+                                                cvra::motor::config::VelocityPID::Response& rsp)
         {
+            (void) rsp;
+
             parameter_scalar_set(parameter_find(&parameter_root_ns, "/control/velocity/kp"), req.pid.kp);
             parameter_scalar_set(parameter_find(&parameter_root_ns, "/control/velocity/ki"), req.pid.ki);
             parameter_scalar_set(parameter_find(&parameter_root_ns, "/control/velocity/kd"), req.pid.kd);
@@ -403,10 +438,13 @@ static THD_FUNCTION(uavcan_node, arg)
     }
 
     /** Position PID config */
-    uavcan::Subscriber<cvra::motor::config::PositionPID> position_pid_srv(node);
+    uavcan::ServiceServer<cvra::motor::config::PositionPID> position_pid_srv(node);
     const int position_pid_srv_res = position_pid_srv.start(
-        [&](const uavcan::ReceivedDataStructure<cvra::motor::config::PositionPID>& req)
+        [&](const uavcan::ReceivedDataStructure<cvra::motor::config::PositionPID::Request>& req,
+                                                cvra::motor::config::PositionPID::Response& rsp)
         {
+            (void) rsp;
+
             parameter_scalar_set(parameter_find(&parameter_root_ns, "/control/position/kp"), req.pid.kp);
             parameter_scalar_set(parameter_find(&parameter_root_ns, "/control/position/ki"), req.pid.ki);
             parameter_scalar_set(parameter_find(&parameter_root_ns, "/control/position/kd"), req.pid.kd);
@@ -418,10 +456,13 @@ static THD_FUNCTION(uavcan_node, arg)
     }
 
     /** Torque Limit config */
-    uavcan::Subscriber<cvra::motor::config::TorqueLimit> torque_limit_srv(node);
+    uavcan::ServiceServer<cvra::motor::config::TorqueLimit> torque_limit_srv(node);
     const int torque_limit_srv_res = torque_limit_srv.start(
-        [&](const uavcan::ReceivedDataStructure<cvra::motor::config::TorqueLimit>& req)
+        [&](const uavcan::ReceivedDataStructure<cvra::motor::config::TorqueLimit::Request>& req,
+                                                cvra::motor::config::TorqueLimit::Response& rsp)
         {
+            (void) rsp;
+
             parameter_scalar_set(parameter_find(&parameter_root_ns, "/control/torque_limit"), req.torque_limit);
         });
 
@@ -430,10 +471,12 @@ static THD_FUNCTION(uavcan_node, arg)
     }
 
     /** Enable Motor config */
-    uavcan::Subscriber<cvra::motor::config::EnableMotor> enable_motor_srv(node);
+    uavcan::ServiceServer<cvra::motor::config::EnableMotor> enable_motor_srv(node);
     const int enable_motor_srv_res = enable_motor_srv.start(
-        [&](const uavcan::ReceivedDataStructure<cvra::motor::config::EnableMotor>& req)
+        [&](const uavcan::ReceivedDataStructure<cvra::motor::config::EnableMotor::Request>& req,
+                                                cvra::motor::config::EnableMotor::Response& rsp)
         {
+            (void) rsp;     /* empty response */
             control_enable(req.enable);
         });
 
@@ -531,7 +574,6 @@ static THD_FUNCTION(uavcan_node, arg)
             proximity_beacon_running = true;
         }
     }
-    return 0;
 }
 
 extern "C"

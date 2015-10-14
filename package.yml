@@ -18,15 +18,9 @@ target.arm:
     - can-bootloader/config.c
     - src/reboot.c
     - src/uavcan_node.cpp
-    - src/can-driver/src/uc_stm32_can.cpp
-    - src/can-driver/src/uc_stm32_clock.cpp
-    - src/can-driver/src/uc_stm32_thread.cpp
     - src/libstubs.cpp
     - src/stream.c
     - src/proximity_beacon.c
-
-include_directories:
-    - src/can-driver/include
 
 depends:
     - pid

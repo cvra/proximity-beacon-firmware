@@ -65,7 +65,6 @@ THD_FUNCTION(stream_task, arg)
         }
         chThdSleepMilliseconds(10);
     }
-    return 0;
 }
 
 
@@ -90,13 +89,13 @@ static THD_FUNCTION(parameter_listener, arg)
         }
         (void)ret; // ingore errors
     }
-    return 0;
 }
 
 
 void panic_hook(const char* reason)
 {
     palClearPad(GPIOA, GPIOA_LED);      // turn on LED (active low)
+    motor_pwm_disable();
     static BlockingUARTDriver blocking_uart_stream;
     blocking_uart_init(&blocking_uart_stream, USART3, 115200);
     BaseSequentialStream* uart = (BaseSequentialStream*)&blocking_uart_stream;
@@ -159,7 +158,6 @@ static THD_FUNCTION(led_thread, arg)
             chThdSleepMilliseconds(760);
         }
     }
-    return 0;
 }
 
 int main(void) {
@@ -193,6 +191,8 @@ int main(void) {
 
 
     control_init();
+
+    index_init();
 
     // chThdCreateStatic(stream_task_wa, sizeof(stream_task_wa), LOWPRIO, stream_task, NULL);
     chThdCreateStatic(parameter_listener_wa, sizeof(parameter_listener_wa), LOWPRIO, parameter_listener, &SD3);

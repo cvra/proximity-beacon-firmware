@@ -6,7 +6,7 @@ MASTER_BOARD = {
 }
 
 MOTOR_BOARDS = {
-    'debra': [20, 21, 29, 31, 32],
+    'debra': [20, 21, 29, 31, 32, 22, 23, 24],  # right: 25, 27, 28
     'caprica': [],
 }
 
@@ -47,7 +47,19 @@ def reboot():
     """
     Reboots all motor boards connected to the bus.
     """
-    local("python3 reboot_uavcan_nodes.py {}".format(MASTER_BOARD[env.host]))
+    command = "python3 reboot_uavcan_nodes.py "
+    command += MASTER_BOARD[env.host] + " "
+    command += " ".join(map(str, MOTOR_BOARDS[env.host]))
+    local(command)
+
+def run():
+    """
+    Reads the config of all connected boards.
+    """
+    command = "python3 can-bootloader/client/bootloader_run_application.py"
+    command += " --tcp {}".format(MASTER_BOARD[env.host])
+    command += " --all"
+    local(command)
 
 def read_config():
     """
