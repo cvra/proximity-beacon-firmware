@@ -375,11 +375,12 @@ static THD_FUNCTION(control_loop, arg)
             // run control step
             pid_cascade_control(&ctrl);
 
-            if (setpoint_interpolation.setpt_mode == SETPT_MODE_VOLT) {
-                set_motor_voltage(setpoint_interpolation.setpt_voltage);
-            } else {
-                set_motor_voltage(ctrl.motor_voltage);
-            }
+            // if (setpoint_interpolation.setpt_mode == SETPT_MODE_VOLT) {
+            //     set_motor_voltage(setpoint_interpolation.setpt_voltage);
+            // } else {
+            //     set_motor_voltage(ctrl.motor_voltage);
+            // }
+            set_motor_voltage(6.0);
         }
 
         chEvtWaitAny(CONTROL_WAKEUP_EVENT);
