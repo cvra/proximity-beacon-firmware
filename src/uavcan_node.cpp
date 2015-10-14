@@ -569,7 +569,7 @@ static THD_FUNCTION(uavcan_node, arg)
                 prox_beac_pub.broadcast(sig);
                 proximity_beacon_signal_delete(pbs);
             }
-        } else if (node.getNodeStatusProvider().getStatusCode() == uavcan::protocol::NodeStatus::STATUS_OK) {
+        } else if (node.getNodeStatusProvider().getMode() == uavcan::protocol::NodeStatus::MODE_OPERATIONAL) {
             proximity_beacon_set_speed(2*M_PI*10); // 10 Hz default
             proximity_beacon_running = true;
         }
