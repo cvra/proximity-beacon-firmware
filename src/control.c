@@ -360,8 +360,7 @@ static THD_FUNCTION(control_loop, arg)
 
         timestamp_t now = timestamp_get();
         if (!control_en
-            || analog_get_battery_voltage() < low_batt_th
-            || timestamp_duration_s(last_setpoint_update, now) > ctrl_timeout) {
+            || analog_get_battery_voltage() < low_batt_th) {
             pid_reset_integral(&ctrl.current_pid);
             pid_reset_integral(&ctrl.velocity_pid);
             pid_reset_integral(&ctrl.position_pid);
