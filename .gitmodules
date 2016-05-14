@@ -40,6 +40,3 @@
 [submodule "cvra/motor"]
 	path = cvra/motor
 	url = https://github.com/cvra/motor-control-uavcan-dsdl.git
-[submodule "cvra/proximity_beacon"]
-	path = cvra/proximity_beacon
-	url = https://github.com/cvra/proximity-beacon-uavcan-dsdl.git
