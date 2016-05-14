@@ -496,6 +496,12 @@ static THD_FUNCTION(uavcan_node, arg)
         uavcan_failure("cvra::proximity_beacon::Settings server");
     }
 
+    control_start();
+    control_enable(true);
+    // Mark the node as correctly initialized
+    node.getNodeStatusProvider().setModeOperational();
+    node.getNodeStatusProvider().setHealthOk();
+
     bool proximity_beacon_running = false;
     while (true) {
         int res = node.spin(uavcan::MonotonicDuration::fromMSec(1000/UAVCAN_SPIN_FREQUENCY));

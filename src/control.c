@@ -361,25 +361,27 @@ static THD_FUNCTION(control_loop, arg)
         timestamp_t now = timestamp_get();
         if (!control_en
             || analog_get_battery_voltage() < low_batt_th
-            || timestamp_duration_s(last_setpoint_update, now) > ctrl_timeout) {
+            // || timestamp_duration_s(last_setpoint_update, now) > ctrl_timeout
+            ) {
             pid_reset_integral(&ctrl.current_pid);
             pid_reset_integral(&ctrl.velocity_pid);
             pid_reset_integral(&ctrl.position_pid);
             set_motor_voltage(0);
         } else {
-            // setpoints
-            chBSemWait(&setpoint_interpolation_lock);
-            setpoint_compute(&setpoint_interpolation, &ctrl.setpts, delta_t);
-            chBSemSignal(&setpoint_interpolation_lock);
+            // // setpoints
+            // chBSemWait(&setpoint_interpolation_lock);
+            // setpoint_compute(&setpoint_interpolation, &ctrl.setpts, delta_t);
+            // chBSemSignal(&setpoint_interpolation_lock);
 
-            // run control step
-            pid_cascade_control(&ctrl);
+            // // run control step
+            // pid_cascade_control(&ctrl);
 
-            if (setpoint_interpolation.setpt_mode == SETPT_MODE_VOLT) {
-                set_motor_voltage(setpoint_interpolation.setpt_voltage);
-            } else {
-                set_motor_voltage(ctrl.motor_voltage);
-            }
+            // if (setpoint_interpolation.setpt_mode == SETPT_MODE_VOLT) {
+            //     set_motor_voltage(setpoint_interpolation.setpt_voltage);
+            // } else {
+            //     set_motor_voltage(ctrl.motor_voltage);
+            // }
+            set_motor_voltage(6.0);
         }
 
         chEvtWaitAny(CONTROL_WAKEUP_EVENT);
