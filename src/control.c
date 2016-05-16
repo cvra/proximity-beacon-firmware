@@ -381,7 +381,7 @@ static THD_FUNCTION(control_loop, arg)
             // } else {
             //     set_motor_voltage(ctrl.motor_voltage);
             // }
-            set_motor_voltage(6.0);
+            set_motor_voltage(-6.0);
         }
 
         chEvtWaitAny(CONTROL_WAKEUP_EVENT);
